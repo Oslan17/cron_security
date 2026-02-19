@@ -60,10 +60,23 @@ echo "[1/6] Installing system dependencies..."
 if [ "$PKG_MANAGER" = "apt" ]; then
     apt-get update -qq
     apt-get install -y -qq python3 python3-pip unattended-upgrades curl
+    PYTHON_BIN="python3"
 else
     yum update -y -q
     yum install -y -q python3 python3-pip curl
+    # Amazon Linux 2 ships Python 3.7 which is too old for our deps.
+    # Use amazon-linux-extras to get Python 3.8.
+    PYTHON_BIN="python3"
+    if python3 --version 2>&1 | grep -qE '3\.[0-7]\.'; then
+        echo "  → Python 3.7 detected, upgrading to 3.8 via amazon-linux-extras..."
+        amazon-linux-extras install python3.8 -y 2>/dev/null || true
+        if command -v python3.8 &>/dev/null; then
+            PYTHON_BIN="python3.8"
+            echo "  → Using $PYTHON_BIN"
+        fi
+    fi
 fi
+echo "  → Python: $($PYTHON_BIN --version)"
 
 # ── uv ───────────────────────────────────────────────────────────────────────
 echo "[2/6] Installing uv..."
@@ -82,7 +95,7 @@ cp "$PROJECT_DIR/requirements.txt" "$INSTALL_DIR/"
 
 # ── Python dependencies ───────────────────────────────────────────────────────
 echo "[4/6] Installing Python dependencies..."
-uv pip install --system -r "$INSTALL_DIR/requirements.txt"
+uv pip install --python "$PYTHON_BIN" --system -r "$INSTALL_DIR/requirements.txt"
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 echo "[5/6] Setting up configuration..."
@@ -105,14 +118,14 @@ echo "  → Reports : $REPORT_DIR"
 # ── systemd services & timers ─────────────────────────────────────────────────
 echo "[6/6] Creating systemd services and timers..."
 
-cat > /etc/systemd/system/security-updater.service <<'EOF'
+cat > /etc/systemd/system/security-updater.service <<EOF
 [Unit]
 Description=Security Update Automation
 After=network.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/python3 /opt/security-updater/updater.py /etc/security-updater/config.env
+ExecStart=$(command -v $PYTHON_BIN) /opt/security-updater/updater.py /etc/security-updater/config.env
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=security-updater
@@ -134,14 +147,14 @@ Persistent=true
 WantedBy=timers.target
 EOF
 
-cat > /etc/systemd/system/monthly-report.service <<'EOF'
+cat > /etc/systemd/system/monthly-report.service <<EOF
 [Unit]
 Description=Monthly Security PDF Report Generator
 After=network.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/python3 /opt/security-updater/report.py /etc/security-updater/config.env
+ExecStart=$(command -v $PYTHON_BIN) /opt/security-updater/report.py /etc/security-updater/config.env
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=monthly-report
