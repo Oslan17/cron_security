@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations  # Python 3.8 compat for list[...] type hints
 """
 updater.py - Run security updates and save timestamped logs to disk.
 

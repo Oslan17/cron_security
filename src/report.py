@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations  # Python 3.8 compat for list[...] type hints
 """
 report.py - Generate a monthly PDF security report from local log files.
 
