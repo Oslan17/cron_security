@@ -1,0 +1,17 @@
+[project]
+name = "security-updater"
+version = "2.0.0"
+description = "Automated security patching with monthly PDF reports for EC2 servers"
+requires-python = ">=3.9"
+dependencies = [
+    "reportlab>=4.0.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.scripts]
+security-updater = "updater:main"
+security-report  = "report:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
