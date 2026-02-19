@@ -2,6 +2,9 @@
 """
 updater.py - Run security updates and save timestamped logs to disk.
 
+Supports both Debian/Ubuntu (apt-get + unattended-upgrade)
+and RHEL/Amazon Linux (yum --security).
+
 Usage:
     python3 updater.py [config_file]
     python3 updater.py --dry-run        (print commands, don't execute)
@@ -26,8 +29,47 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 # ── Constants ────────────────────────────────────────────────────────────────
-SEP = "=" * 70
+SEP  = "=" * 70
 STAR = "*" * 70
+
+
+def _detect_os() -> str:
+    """
+    Detect the package manager family.
+    Returns 'debian' (apt-get) or 'rhel' (yum/dnf).
+    """
+    os_release = Path("/etc/os-release")
+    if os_release.exists():
+        content = os_release.read_text()
+        for line in content.splitlines():
+            if line.startswith("ID_LIKE=") or line.startswith("ID="):
+                val = line.split("=", 1)[1].strip('"').lower()
+                if any(x in val for x in ("debian", "ubuntu")):
+                    return "debian"
+                if any(x in val for x in ("rhel", "fedora", "centos", "amzn")):
+                    return "rhel"
+    # Fallback: check which binary exists
+    if Path("/usr/bin/apt-get").exists():
+        return "debian"
+    return "rhel"
+
+
+def _get_commands(os_family: str) -> list[tuple[str, list[str]]]:
+    """Return list of (step_label, command) tuples for the detected OS."""
+    if os_family == "debian":
+        return [
+            ("STEP 1 — Update package index (apt-get update)",
+             ["apt-get", "update"]),
+            ("STEP 2 — Apply security patches (unattended-upgrade -d)",
+             ["unattended-upgrade", "-d"]),
+        ]
+    else:  # rhel / amazon linux
+        return [
+            ("STEP 1 — Check for security updates (yum check-update --security)",
+             ["yum", "check-update", "--security"]),
+            ("STEP 2 — Apply security patches (yum update --security -y)",
+             ["yum", "update", "--security", "-y"]),
+        ]
 
 
 def _run(cmd: list[str], log_fh, dry_run: bool = False) -> int:
@@ -49,6 +91,9 @@ def _run(cmd: list[str], log_fh, dry_run: bool = False) -> int:
     log_fh.write(result.stdout or "")
     log_fh.write(f"\n[exit {result.returncode}]\n\n")
     log_fh.flush()
+    # yum check-update returns 100 when updates are available (not an error)
+    if cmd[0] == "yum" and "check-update" in cmd and result.returncode == 100:
+        return 0
     return result.returncode
 
 
@@ -67,13 +112,15 @@ def run_updates(config_file: str = "/etc/security-updater/config.env",
     else:
         log_dir = cfg.log_dir
 
-    # Ensure log directory exists
     Path(log_dir).mkdir(parents=True, exist_ok=True)
-
     log_path = os.path.join(log_dir, f"security-update_{timestamp}.log")
+
+    os_family = _detect_os()
+    steps = _get_commands(os_family)
 
     log.info("Starting security update workflow")
     log.info(f"Server  : {cfg.server_name}  ({cfg.environment})")
+    log.info(f"OS      : {os_family}")
     log.info(f"Log file: {log_path}")
 
     exit_code = 0
@@ -81,31 +128,22 @@ def run_updates(config_file: str = "/etc/security-updater/config.env",
     with open(log_path, "w", encoding="utf-8") as fh:
         # ── Header ──────────────────────────────────────────────────────────
         fh.write(f"{SEP}\n")
-        fh.write(f"Security Update Log\n")
+        fh.write("Security Update Log\n")
         fh.write(f"Server      : {cfg.server_name}\n")
         fh.write(f"Environment : {cfg.environment}\n")
+        fh.write(f"OS Family   : {os_family}\n")
         fh.write(f"Started     : {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
         fh.write(f"{SEP}\n\n")
 
-        # ── Step 1: apt-get update ───────────────────────────────────────────
-        fh.write(f"{STAR}\n")
-        fh.write("STEP 1 — Update package index (apt-get update)\n")
-        fh.write(f"{STAR}\n\n")
+        for label, cmd in steps:
+            fh.write(f"{STAR}\n")
+            fh.write(f"{label}\n")
+            fh.write(f"{STAR}\n\n")
 
-        rc = _run(["apt-get", "update"], fh, dry_run)
-        if rc != 0:
-            log.warning(f"apt-get update exited with code {rc}")
-            exit_code = 1
-
-        # ── Step 2: unattended-upgrade ───────────────────────────────────────
-        fh.write(f"{STAR}\n")
-        fh.write("STEP 2 — Apply security patches (unattended-upgrade -d)\n")
-        fh.write(f"{STAR}\n\n")
-
-        rc = _run(["unattended-upgrade", "-d"], fh, dry_run)
-        if rc != 0:
-            log.warning(f"unattended-upgrade exited with code {rc}")
-            exit_code = 1
+            rc = _run(cmd, fh, dry_run)
+            if rc != 0:
+                log.warning(f"Command '{cmd[0]}' exited with code {rc}")
+                exit_code = 1
 
         # ── Footer ───────────────────────────────────────────────────────────
         status = "SUCCESS" if exit_code == 0 else "COMPLETED WITH ERRORS"

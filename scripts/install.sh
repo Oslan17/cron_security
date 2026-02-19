@@ -1,5 +1,6 @@
 #!/bin/bash
-# Installation script for Security Update Automation System
+# Security Update Automation — Universal Installer
+# Supports: Ubuntu 20.04+, Debian 10+, Amazon Linux 2, RHEL/CentOS 7+
 # Usage: sudo bash scripts/install.sh
 
 set -euo pipefail
@@ -21,19 +22,54 @@ INSTALL_DIR="/opt/security-updater"
 CONFIG_DIR="/etc/security-updater"
 
 echo "Project : $PROJECT_DIR"
+
+# ── OS Detection ─────────────────────────────────────────────────────────────
+OS_FAMILY="unknown"
+PKG_MANAGER="unknown"
+
+if [ -f /etc/os-release ]; then
+    . /etc/os-release
+    case "${ID_LIKE:-$ID}" in
+        *debian*|*ubuntu*)
+            OS_FAMILY="debian"
+            PKG_MANAGER="apt"
+            ;;
+        *rhel*|*fedora*|*centos*|*amzn*)
+            OS_FAMILY="rhel"
+            PKG_MANAGER="yum"
+            ;;
+    esac
+fi
+
+# Fallback: binary check
+if [ "$OS_FAMILY" = "unknown" ]; then
+    command -v apt-get &>/dev/null && OS_FAMILY="debian" PKG_MANAGER="apt"
+    command -v yum     &>/dev/null && OS_FAMILY="rhel"   PKG_MANAGER="yum"
+fi
+
+echo "OS      : ${PRETTY_NAME:-$OS_FAMILY}"
 echo ""
+
+if [ "$OS_FAMILY" = "unknown" ]; then
+    echo "ERROR: Unsupported OS. Requires Ubuntu/Debian or Amazon Linux/RHEL/CentOS."
+    exit 1
+fi
 
 # ── System dependencies ───────────────────────────────────────────────────────
 echo "[1/6] Installing system dependencies..."
-apt-get update -qq
-apt-get install -y -qq python3 python3-pip unattended-upgrades curl
+if [ "$PKG_MANAGER" = "apt" ]; then
+    apt-get update -qq
+    apt-get install -y -qq python3 python3-pip unattended-upgrades curl
+else
+    yum update -y -q
+    yum install -y -q python3 python3-pip curl
+fi
 
 # ── uv ───────────────────────────────────────────────────────────────────────
 echo "[2/6] Installing uv..."
 if ! command -v uv &>/dev/null; then
     curl -LsSf https://astral.sh/uv/install.sh | sh
 fi
-# uv installs to ~/.local/bin
 export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 
 # ── Copy files ────────────────────────────────────────────────────────────────
@@ -53,12 +89,12 @@ echo "[5/6] Setting up configuration..."
 mkdir -p "$CONFIG_DIR"
 if [ ! -f "$CONFIG_DIR/config.env" ]; then
     cp "$PROJECT_DIR/config/config.production.env" "$CONFIG_DIR/config.env"
-    echo "  → Created $CONFIG_DIR/config.env — edit SERVER_NAME and ENVIRONMENT!"
+    echo "  → Created $CONFIG_DIR/config.env — edit SERVER_NAME + Telegram credentials!"
 else
     echo "  → $CONFIG_DIR/config.env already exists, skipping"
 fi
 
-# Create data directories with correct permissions (read paths from the installed config)
+# Create data directories from config
 LOG_DIR=$(grep '^LOG_DIR' "$CONFIG_DIR/config.env" | cut -d= -f2)
 REPORT_DIR=$(grep '^REPORT_DIR' "$CONFIG_DIR/config.env" | cut -d= -f2)
 mkdir -p "$LOG_DIR" "$REPORT_DIR"
@@ -69,7 +105,6 @@ echo "  → Reports : $REPORT_DIR"
 # ── systemd services & timers ─────────────────────────────────────────────────
 echo "[6/6] Creating systemd services and timers..."
 
-# --- security-updater.service ---
 cat > /etc/systemd/system/security-updater.service <<'EOF'
 [Unit]
 Description=Security Update Automation
@@ -86,7 +121,6 @@ SyslogIdentifier=security-updater
 WantedBy=multi-user.target
 EOF
 
-# --- security-updater.timer (every Sunday at 00:00) ---
 cat > /etc/systemd/system/security-updater.timer <<'EOF'
 [Unit]
 Description=Weekly security update timer
@@ -100,7 +134,6 @@ Persistent=true
 WantedBy=timers.target
 EOF
 
-# --- monthly-report.service ---
 cat > /etc/systemd/system/monthly-report.service <<'EOF'
 [Unit]
 Description=Monthly Security PDF Report Generator
@@ -117,7 +150,6 @@ SyslogIdentifier=monthly-report
 WantedBy=multi-user.target
 EOF
 
-# --- monthly-report.timer (1st of every month at 01:00) ---
 cat > /etc/systemd/system/monthly-report.timer <<'EOF'
 [Unit]
 Description=Monthly security report timer
@@ -134,7 +166,7 @@ EOF
 systemctl daemon-reload
 systemctl enable --now security-updater.timer monthly-report.timer
 
-# ── Done ───────────────────────────────────────────────────────────────────────
+# ── Done ─────────────────────────────────────────────────────────────────────
 echo ""
 echo "=========================================="
 echo " Installation complete!"
