@@ -1,18 +1,28 @@
 # Quick Start
 
+## Supported OS
+
+| Distro | Auto-detected |
+|--------|---------------|
+| Ubuntu 20.04+ / Debian 10+ | `apt-get` + `unattended-upgrade` |
+| Amazon Linux 2 / RHEL / CentOS 7+ | `yum update --security` |
+
+---
+
 ## Install on EC2 (3 steps)
 
 ```bash
 # 1. Copy project to server
 scp -r ./cron_security user@your-ec2:/tmp/
 
-# 2. Install (run on the server)
+# 2. Install (run on the server) — installer auto-detects your OS
 ssh user@your-ec2
 cd /tmp/cron_security && sudo bash scripts/install.sh
 
-# 3. Set your server name
+# 3. Set your server name + Telegram credentials
 sudo nano /etc/security-updater/config.env
 #    → change SERVER_NAME=EC2-Production-Server
+#    → add TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID
 ```
 
 Done. The system is now active and scheduled automatically.

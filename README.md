@@ -12,9 +12,16 @@ Automated weekly security patching for EC2 (Ubuntu/Debian) servers, with monthly
 
 ## 📋 Overview
 
+**Supported OS** — the installer auto-detects the distro:
+
+| Distro | Package Manager | Security Command |
+|--------|----------------|------------------|
+| Ubuntu 20.04+ / Debian 10+ | `apt-get` | `unattended-upgrade -d` |
+| Amazon Linux 2 / RHEL / CentOS 7+ | `yum` | `yum update --security` |
+
 | When | What | Result |
 |------|------|--------|
-| Every Sunday 00:00 | `apt-get update` + `unattended-upgrade -d` | Timestamped log saved |
+| Every Sunday 00:00 | `apt-get update` + `unattended-upgrade` *(or `yum update --security`)* | Timestamped log saved |
 | 1st of every month 01:00 | Collect all monthly logs → build PDF | PDF sent to Telegram channel |
 
 ---
@@ -108,7 +115,7 @@ cd src && python3 report.py ../config/config.env.example 2026 2
 
 | Requirement | Version |
 |-------------|---------|
-| OS | Ubuntu 20.04+ / Debian 10+ |
+| OS | Ubuntu 20.04+ / Debian 10+ / Amazon Linux 2 / RHEL 7+ |
 | Python | 3.9+ |
 | Access | `sudo` / root |
 | Internet | Required |

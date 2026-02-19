@@ -1,12 +1,25 @@
 # Installation Guide
 
+## OS Support
+
+The installer auto-detects your Linux distro via `/etc/os-release`:
+
+| OS Family | Detected as | Package Manager | Security Command |
+|-----------|-------------|----------------|------------------|
+| Ubuntu 20.04+ / Debian 10+ | `debian` | `apt-get` | `unattended-upgrade -d` |
+| Amazon Linux 2 / RHEL / CentOS 7+ | `rhel` | `yum` | `yum update --security -y` |
+
+No configuration needed — the correct path is chosen automatically.
+
+---
+
 ## What `install.sh` Does
 
 Runs 6 steps automatically:
 
 | Step | Action |
 |------|--------|
-| 1 | `apt-get install python3 python3-pip unattended-upgrades curl` |
+| 1 | Install system deps: `python3`, `python3-pip`, `curl` *(+ `unattended-upgrades` on Debian)* |
 | 2 | Installs `uv` (fast Python package manager) |
 | 3 | Copies `src/` files to `/opt/security-updater/` |
 | 4 | `uv pip install -r requirements.txt` (`reportlab`, `python-dotenv`) |
@@ -66,6 +79,10 @@ LOG_DIR=/var/log/security-updates
 REPORT_DIR=/var/reports/security-updates
 SERVER_NAME=EC2-Production-Server    # ← change this
 ENVIRONMENT=production               # ← or staging, dev
+
+# Telegram notifications (optional)
+TELEGRAM_BOT_TOKEN=your-bot-token
+TELEGRAM_CHAT_ID=your-channel-id
 ```
 
 ### 4. Verify
