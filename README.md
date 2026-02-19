@@ -67,7 +67,7 @@ sudo nano /etc/security-updater/config.env
 | `SERVER_NAME` | `EC2-Server` | Name shown in reports |
 | `ENVIRONMENT` | `production` | `production`, `staging`, `dev` |
 | `TELEGRAM_BOT_TOKEN` | _(empty)_ | Bot token from @BotFather |
-| `TELEGRAM_CHAT_ID` | _(empty)_ | Channel ID (e.g. `REDACTED_CHAT_ID`) |
+| `TELEGRAM_CHAT_ID` | _(empty)_ | Channel ID (get it via `getUpdates` API) |
 
 > If `TELEGRAM_BOT_TOKEN` or `TELEGRAM_CHAT_ID` are empty, the Telegram send is silently skipped.
 
