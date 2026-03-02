@@ -61,8 +61,8 @@ def _get_commands(os_family: str) -> list[tuple[str, list[str]]]:
         return [
             ("STEP 1 — Update package index (apt-get update)",
              ["apt-get", "update"]),
-            ("STEP 2 — Apply security patches (unattended-upgrade -d)",
-             ["unattended-upgrade", "-d"]),
+            ("STEP 2 — Apply security patches (unattended-upgrade)",
+             ["unattended-upgrade"]),
         ]
     else:  # rhel / amazon linux
         return [
