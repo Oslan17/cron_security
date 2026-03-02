@@ -141,7 +141,7 @@ Requires=security-updater.service
 
 [Timer]
 OnCalendar=Sun *-*-* 00:00:00
-Persistent=true
+Persistent=false
 
 [Install]
 WantedBy=timers.target
@@ -170,7 +170,7 @@ Requires=monthly-report.service
 
 [Timer]
 OnCalendar=*-*-01 01:00:00
-Persistent=true
+Persistent=false
 
 [Install]
 WantedBy=timers.target
