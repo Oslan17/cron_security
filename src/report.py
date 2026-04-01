@@ -380,8 +380,15 @@ def generate_monthly_report(
     cfg = load_config(config_file)
 
     now = datetime.now()
-    year = year or now.year
-    month = month or now.month
+    if year is None and month is None:
+        # When run automatically on the 1st, report on the previous month
+        from datetime import timedelta
+        prev = now.replace(day=1) - timedelta(days=1)
+        year = prev.year
+        month = prev.month
+    else:
+        year = year or now.year
+        month = month or now.month
 
     entries = collect_logs(cfg.log_dir, year, month)
     if not entries:
