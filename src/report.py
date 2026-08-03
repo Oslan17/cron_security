@@ -182,12 +182,40 @@ def build_pdf(
     month_label = datetime(year, month, 1).strftime("%B %Y")
     elements = []
 
+    # Parse everything up front so the header can lead with the month's outcome.
+    # Entries are sorted by filename (= chronological), so the last one is the
+    # server's current patch state.
+    parsed_entries = [_parse_log(content) for _, content in entries]
+    ok_runs = sum(1 for p in parsed_entries if "SUCCESS" in p["status"].upper())
+    last = parsed_entries[-1]
+    last_ok = "SUCCESS" in last["status"].upper()
+
     # ── Title ────────────────────────────────────────────────────────────────
     elements.append(Paragraph(
         f"Monthly Security Report<br/>{cfg.server_name}",
         styles["Title2"],
     ))
     elements.append(Spacer(1, 0.1 * inch))
+
+    # ── Current-state banner ──────────────────────────────────────────────────
+    if last_ok:
+        state_text = f"SERVER UP TO DATE — latest run succeeded ({last['finished']})"
+        state_color = colors.HexColor("#27ae60")
+    else:
+        state_text = f"ATTENTION REQUIRED — latest run failed ({last['finished']})"
+        state_color = colors.HexColor("#c0392b")
+    banner = Table([[state_text]], colWidths=[6 * inch])
+    banner.setStyle(TableStyle([
+        ("BACKGROUND",   (0, 0), (-1, -1), state_color),
+        ("TEXTCOLOR",    (0, 0), (-1, -1), colors.whitesmoke),
+        ("FONTNAME",     (0, 0), (-1, -1), "Helvetica-Bold"),
+        ("FONTSIZE",     (0, 0), (-1, -1), 12),
+        ("ALIGN",        (0, 0), (-1, -1), "CENTER"),
+        ("TOPPADDING",   (0, 0), (-1, -1), 12),
+        ("BOTTOMPADDING",(0, 0), (-1, -1), 12),
+    ]))
+    elements.append(banner)
+    elements.append(Spacer(1, 0.15 * inch))
 
     # ── Top summary table ─────────────────────────────────────────────────────
     summary = [
@@ -196,6 +224,7 @@ def build_pdf(
         ["Environment",      cfg.environment.upper()],
         ["Server",           cfg.server_name],
         ["Total Updates",    str(len(entries))],
+        ["Successful Runs",  f"{ok_runs} of {len(entries)}"],
     ]
     t = Table(summary, colWidths=[1.8 * inch, 4.2 * inch])
     t.setStyle(TableStyle([
@@ -213,16 +242,24 @@ def build_pdf(
 
     # ── Per-run sections ──────────────────────────────────────────────────────
     for idx, (filename, content) in enumerate(entries, 1):
-        parsed = _parse_log(content)
+        parsed = parsed_entries[idx - 1]
 
         elements.append(Paragraph(
             f"Update #{idx} — {filename}",
             styles["Section"],
         ))
 
-        # Status banner
+        # Status banner — failed runs followed by a later success are labeled
+        # as resolved so the history reads correctly at a glance.
+        status_label = parsed["status"]
+        run_ok = "SUCCESS" in status_label.upper()
+        superseded = not run_ok and any(
+            "SUCCESS" in p["status"].upper() for p in parsed_entries[idx:]
+        )
+        if superseded:
+            status_label = f"{status_label} — resolved by a later successful run"
         sc = _status_color(parsed["status"])
-        sb = Table([[parsed["status"]]], colWidths=[6 * inch])
+        sb = Table([[status_label]], colWidths=[6 * inch])
         sb.setStyle(TableStyle([
             ("BACKGROUND",   (0, 0), (-1, -1), sc),
             ("TEXTCOLOR",    (0, 0), (-1, -1), colors.whitesmoke),
