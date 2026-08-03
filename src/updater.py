@@ -15,6 +15,7 @@ import os
 import sys
 import subprocess
 import logging
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -32,6 +33,17 @@ log = logging.getLogger(__name__)
 # ── Constants ────────────────────────────────────────────────────────────────
 SEP  = "=" * 70
 STAR = "*" * 70
+
+# apt/dnf lock contention (apt-daily timers fire at randomized times and can
+# collide with ours) — retry instead of failing the whole run.
+LOCK_PATTERNS = (
+    "lock could not be acquired",
+    "cache lock can not be acquired",
+    "could not get lock",
+    "waiting for cache lock",
+)
+LOCK_MAX_ATTEMPTS = 5
+LOCK_WAIT_SECS = 120
 
 
 def _detect_os() -> str:
@@ -74,7 +86,11 @@ def _get_commands(os_family: str) -> list[tuple[str, list[str]]]:
 
 
 def _run(cmd: list[str], log_fh, dry_run: bool = False) -> int:
-    """Run a command, stream output to log file, return exit code."""
+    """Run a command, stream output to log file, return exit code.
+
+    Retries while the package manager lock is held by another process
+    (e.g. apt-daily / apt-daily-upgrade running at the same time).
+    """
     log_fh.write(f"$ {' '.join(cmd)}\n")
     log_fh.flush()
 
@@ -82,20 +98,43 @@ def _run(cmd: list[str], log_fh, dry_run: bool = False) -> int:
         log_fh.write("[DRY-RUN] command not executed\n\n")
         return 0
 
-    result = subprocess.run(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        timeout=1800,   # 30 min hard limit
-    )
-    log_fh.write(result.stdout or "")
-    log_fh.write(f"\n[exit {result.returncode}]\n\n")
-    log_fh.flush()
-    # yum check-update returns 100 when updates are available (not an error)
-    if cmd[0] == "yum" and "check-update" in cmd and result.returncode == 100:
-        return 0
-    return result.returncode
+    for attempt in range(1, LOCK_MAX_ATTEMPTS + 1):
+        result = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            timeout=1800,   # 30 min hard limit
+        )
+        output = result.stdout or ""
+        log_fh.write(output)
+
+        # yum check-update returns 100 when updates are available (not an error)
+        rc = result.returncode
+        if cmd[0] == "yum" and "check-update" in cmd and rc == 100:
+            rc = 0
+
+        lock_held = rc != 0 and any(p in output.lower() for p in LOCK_PATTERNS)
+        if lock_held and attempt < LOCK_MAX_ATTEMPTS:
+            log_fh.write(
+                f"\n[lock held by another package manager — "
+                f"retry {attempt}/{LOCK_MAX_ATTEMPTS - 1} in {LOCK_WAIT_SECS}s]\n\n"
+            )
+            log_fh.flush()
+            log.warning(
+                f"Package manager lock held, retrying in {LOCK_WAIT_SECS}s "
+                f"(attempt {attempt}/{LOCK_MAX_ATTEMPTS - 1})"
+            )
+            time.sleep(LOCK_WAIT_SECS)
+            log_fh.write(f"$ {' '.join(cmd)}\n")
+            log_fh.flush()
+            continue
+
+        log_fh.write(f"\n[exit {result.returncode}]\n\n")
+        log_fh.flush()
+        return rc
+
+    return rc
 
 
 def run_updates(config_file: str = "/etc/security-updater/config.env",
